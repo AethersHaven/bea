@@ -1,91 +1,96 @@
-import os
+from pathlib import Path
+from re import match
+from time import time
+from sys import argv
 
-import shutil
 
- 
+class Patient:
+    file: Path
+    name: str | None
+    id: int | None
+    info: str | None
+    extension: str | None
 
-#layout "last first ID"
 
-def IsValidFolder(nameFolder):
+    def __init__(self, file: Path) -> None:
+        self.file = file
+        try:
+            id_index = next((i for i, c in enumerate(file.name) if c.isdigit()), -1)
+            self.name = file.name[:id_index].strip()
+            self.id = int(file.name[id_index:].strip().split(" ")[0])
+            other = file.name[
+                file.name.index(str(self.id)) + len(str(self.id)) :
+            ].split(".")
+            self.info = other[0].strip()
+            self.extension = other[1].strip()
+        except Exception:
+            self.name = None
 
-    arr = nameFolder.split()
 
-    return len(arr) == 3 and IsName(arr[0]) and IsName(arr[1]) and arr[2].isnumeric() and len(arr[2]) <= 5
-
- 
-
-#layout "last first ID other"
-
-def IsValidFile(fileName):
-
-    arr = fileName[:len(fileName)-4].split()
-
-    return not fileName.endswith(".py") and "." in fileName and len(arr) > 3 and IsName(arr[0]) and IsName(arr[1]) and arr[2].isnumeric() and len(arr[2]) <= 5
-
- 
-
-def IsName(name):
-
-    for c in name:
-
-        if not c.isalpha() and not c == "-" and not c == "\'":
-
+    def is_valid(self) -> bool:
+        if (
+            self.name is None
+            or self.id is None
+            or self.info is None
+            or self.extension is None
+        ):
             return False
+        name_pattern = r"([A-Za-z']+((-[A-Za-z']+)|(\s[A-Za-z']+))?)"
+        if not match(f"^{name_pattern}\s{name_pattern}$", self.name):
+            return False
+        if self.id > 99999:
+            return False
+        if "py" in self.extension or "exe" in self.extension:
+            return False
+        return True
 
-    return True
 
- 
+    def capitalize_name(self) -> None:
+        previous_char = " "
+        for i in range(len(self.name)):
+            if previous_char in (" ", "-"):
+                self.name = self.name[:i] + self.name[i].upper() + self.name[i + 1 :]
+            previous_char = self.name[i]
+    
+    
+    def sort(self, is_prod: bool = True) -> None:
+        first_letter, second_letter = self.name[0].upper(), self.name[1].upper()
+        letter_folder = Path().cwd().parent / first_letter
+        if first_letter == "S":
+            return letter_folder / ("SA to SL" if second_letter <= "L" else "SM to SZ")
+        elif first_letter == "M":
+            return letter_folder / ("Ma to Mh" if second_letter <= "H" else "Mi to Mz")
+        
+        patient_folder = (letter_folder / f"{self.name} {self.id}").resolve()
+        patient_file = (
+            patient_folder / f"{self.name} {self.id} {self.info}.{self.extension}"
+        ).resolve()
 
-def SortFile(file):
+        if is_prod:
+            patient_folder.mkdir(exist_ok=True)
+        else:
+            print(f"mkdir -p \"{patient_folder}\"")
+        
+        if patient_file.exists():
+            time_ms = int(time() * 1000)
+            patient_file = (
+                patient_folder / f"{self.name} {self.id} {self.info}_{time_ms}.{self.extension}"
+            ).resolve()
+        
+        if is_prod:
+            self.file.rename(patient_file)
+        else:
+            print(f"mv \"{self.file}\" \"{patient_file}\"")
 
-    arr = file.split()
+    def __str__(self) -> str:
+        return f"Name: {self.name}, ID: {self.id}, Info: {self.info}, Extension: {self.extension}"
 
-    letter = file[0].upper()
 
-    toFolder = os.getcwd()[:os.getcwd().rfind('\\')+1] + letter + '\\' + file[:file.find(arr[2])+len(arr[2])]
-
-    if letter == 'S' or letter == 'M':
-
-        sAdd = "SM to SZ"
-
-        if letter == 'M' and file[:2].upper() < "MI":
-
-            sAdd = "Ma to Mh"
-
-        elif letter == 'M':
-
-            sAdd = "Mi to Mz"
-
-        elif letter == 'S' and file[:2].upper() < "SM":
-
-            sAdd = "SA to SL"
-
-        if not os.path.isdir(os.getcwd()[:os.getcwd().rfind('\\')+1] + letter + '\\' + sAdd + '\\' + file[:file.find(arr[2])+len(arr[2])]):
-
-            os.makedirs(os.getcwd()[:os.getcwd().rfind('\\')+1] + letter + '\\' + sAdd + '\\' + file[:file.find(arr[2])+len(arr[2])])
-
-        shutil.move(os.getcwd() + '\\' + file, os.getcwd()[:os.getcwd().rfind('\\')+1] + letter + '\\' + sAdd + '\\' + file[:file.find(arr[2])+len(arr[2])] + '\\' + file[:file.find(arr[2])-1] + file[file.find(arr[2])+len(arr[2]):])
-
-    else:
-
-        if not os.path.isdir(toFolder):
-
-            os.makedirs(toFolder)
-
-        shutil.move(os.getcwd() + '\\' + file, toFolder + '\\' + file[:file.find(arr[2])-1] + file[file.find(arr[2])+len(arr[2]):])
-
-    print("Sorted " + file)
-
- 
-
-def main():
-
-    for file in os.listdir(os.getcwd()):
-
-        if IsValidFile(file):
-
-            SortFile(file)
-
- 
-
-main()
+if __name__ == "__main__":
+    is_prod = not (len(argv) > 1 and argv[1] == "dev")
+    for file in Path().cwd().iterdir():
+        if file.is_file():
+            patient = Patient(file)
+            if patient.is_valid():
+                patient.capitalize_name()
+                patient.sort(is_prod)
